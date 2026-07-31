@@ -1,3 +1,5 @@
+import type { FeedItem } from "@/lib/rss";
+
 /** 寫死要訂閱的 X List ID */
 export const X_LIST_ID = "1687536262859849728";
 
@@ -14,6 +16,36 @@ export type XTweet = {
   author_id: string;
   author?: XUser;
 };
+
+function tweetUrl(tweet: XTweet) {
+  const username = tweet.author?.username ?? "i";
+  return `https://x.com/${username}/status/${tweet.id}`;
+}
+
+function tweetTitle(tweet: XTweet) {
+  const author = tweet.author ? `${tweet.author.name} (@${tweet.author.username})` : "X";
+  const preview = tweet.text.replaceAll(/\s+/g, " ").trim();
+  const short = preview.length > 80 ? `${preview.slice(0, 77).trimEnd()}…` : preview;
+  return `${author}: ${short}`;
+}
+
+/** 把 X 貼文轉成中立 FeedItem */
+export function tweetsToFeedItems(tweets: XTweet[]): FeedItem[] {
+  return tweets.map((tweet) => {
+    const url = tweetUrl(tweet);
+    const author = tweet.author ? `${tweet.author.name} (@${tweet.author.username})` : "X";
+
+    return {
+      title: tweetTitle(tweet),
+      link: url,
+      guid: url,
+      pubDate: tweet.created_at,
+      description: tweet.text,
+      author,
+      category: "X",
+    };
+  });
+}
 
 type XListTweetsResponse = {
   data?: Array<{

@@ -1,4 +1,13 @@
-import type { XTweet } from "@/lib/x";
+export type FeedItem = {
+  title: string;
+  link: string;
+  guid: string;
+  /** ISO 8601 或可被 Date 解析的時間字串 */
+  pubDate: string;
+  description: string;
+  author?: string;
+  category?: string;
+};
 
 function escapeXml(value: string) {
   return value
@@ -9,20 +18,8 @@ function escapeXml(value: string) {
     .replaceAll("'", "&apos;");
 }
 
-function tweetUrl(tweet: XTweet) {
-  const username = tweet.author?.username ?? "i";
-  return `https://x.com/${username}/status/${tweet.id}`;
-}
-
-function itemTitle(tweet: XTweet) {
-  const author = tweet.author ? `${tweet.author.name} (@${tweet.author.username})` : "X";
-  const preview = tweet.text.replaceAll(/\s+/g, " ").trim();
-  const short = preview.length > 80 ? `${preview.slice(0, 77).trimEnd()}…` : preview;
-  return `${author}: ${short}`;
-}
-
-function toRfc822(iso: string) {
-  return new Date(iso).toUTCString();
+function toRfc822(value: string) {
+  return new Date(value).toUTCString();
 }
 
 export function buildRssFeed(options: {
@@ -30,24 +27,29 @@ export function buildRssFeed(options: {
   description: string;
   link: string;
   feedUrl: string;
-  tweets: XTweet[];
+  items: FeedItem[];
 }) {
-  const { title, description, link, feedUrl, tweets } = options;
+  const { title, description, link, feedUrl, items } = options;
   const lastBuildDate =
-    tweets[0]?.created_at != null ? toRfc822(tweets[0].created_at) : new Date().toUTCString();
+    items[0]?.pubDate != null ? toRfc822(items[0].pubDate) : new Date().toUTCString();
 
-  const items = tweets
-    .map((tweet) => {
-      const url = tweetUrl(tweet);
-      const author = tweet.author ? `${tweet.author.name} (@${tweet.author.username})` : "X";
+  const itemXml = items
+    .map((item) => {
+      const category =
+        item.category != null && item.category !== ""
+          ? `\n      <category>${escapeXml(item.category)}</category>`
+          : "";
+      const author =
+        item.author != null && item.author !== ""
+          ? `\n      <author>${escapeXml(item.author)}</author>`
+          : "";
 
       return `    <item>
-      <title>${escapeXml(itemTitle(tweet))}</title>
-      <link>${escapeXml(url)}</link>
-      <guid isPermaLink="true">${escapeXml(url)}</guid>
-      <pubDate>${toRfc822(tweet.created_at)}</pubDate>
-      <author>${escapeXml(author)}</author>
-      <description>${escapeXml(tweet.text)}</description>
+      <title>${escapeXml(item.title)}</title>
+      <link>${escapeXml(item.link)}</link>
+      <guid isPermaLink="true">${escapeXml(item.guid)}</guid>
+      <pubDate>${toRfc822(item.pubDate)}</pubDate>${author}${category}
+      <description>${escapeXml(item.description)}</description>
     </item>`;
     })
     .join("\n");
@@ -61,7 +63,7 @@ export function buildRssFeed(options: {
     <language>zh-Hant</language>
     <lastBuildDate>${lastBuildDate}</lastBuildDate>
     <atom:link href="${escapeXml(feedUrl)}" rel="self" type="application/rss+xml" />
-${items}
+${itemXml}
   </channel>
 </rss>
 `;
