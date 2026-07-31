@@ -1,0 +1,9 @@
+minimumReleaseAge: 0
+
+allowBuilds:
+  "@swc/core": true
+  esbuild: true
+  msw: true
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
