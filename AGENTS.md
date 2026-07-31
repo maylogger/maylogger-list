@@ -26,3 +26,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Use Ladle for isolated React component development.
 - Keep Ladle stories next to their components using `*.stories.tsx`.
 - Run `pnpm check` and `pnpm build` before completing code changes.
+
+## 讀取本專案 feed
+
+- **不要用 WebFetch 讀 `/feed.xml`**：Cursor WebFetch 對 RSS/XML 常回 500／timeout。
+- **請讀 `/feed.json`**（相同 `token` / `range` 參數），或用 Shell `curl` 抓 XML。
+- 生產環境若設定了 `FEED_SECRET`，URL 必須帶 `?token=…`。
