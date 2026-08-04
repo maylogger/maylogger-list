@@ -13,6 +13,7 @@ pnpm dev
 ```
 
 - RSS：http://localhost:3000/feed.xml
+- Markdown：http://localhost:3000/feed.md
 
 ## 查詢參數
 
@@ -24,6 +25,7 @@ pnpm dev
 範例：
 
 - `/feed.xml?range=3` — 過去 3 小時
+- `/feed.md?range=3` — 同上，Markdown 輸出
 - `/feed.xml?token=你的密鑰&range=12` — 需密鑰時併用
 
 ## X Developer Console
@@ -40,10 +42,10 @@ FEED_SECRET=可選的隨機密鑰
 
 ## 環境變數
 
-| 變數             | 必填 | 說明                                  |
-| ---------------- | ---- | ------------------------------------- |
-| `X_BEARER_TOKEN` | 是   | X API Bearer Token                    |
-| `FEED_SECRET`    | 否   | 設定後需以 `/feed.xml?token=...` 存取 |
+| 變數             | 必填 | 說明                                                          |
+| ---------------- | ---- | ------------------------------------------------------------- |
+| `X_BEARER_TOKEN` | 是   | X API Bearer Token                                            |
+| `FEED_SECRET`    | 否   | 設定後需以 `/feed.xml?token=...` 或 `/feed.md?token=...` 存取 |
 
 ## 來源
 
@@ -52,6 +54,8 @@ FEED_SECRET=可選的隨機密鑰
 
 ## 技術備註
 
-- Route：`app/feed.xml/route.ts`
+- Route：`app/feed.xml/route.ts`、`app/feed.md/route.ts`
+- 共用抓取／篩選：`lib/feed-route.ts`；Markdown 組裝：`lib/markdown-feed.ts`（Sidebar HTML description 以 `node-html-markdown` 轉換）
+- X 來源會展開 `attachments.media_keys`，把圖片／影片預覽寫進 feed；RSS description 用 HTML `<br>`／`<img>`（CDATA），Markdown 用硬換行與 `![]()`
 - 雙源以 `Promise.allSettled` 並行抓取；單一來源失敗會降級，兩源都失敗才 502
 - 預設快取 5 分鐘（`revalidate = 300`），降低 RSS 客戶端重複請求造成的 API 費用

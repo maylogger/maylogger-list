@@ -22,6 +22,7 @@
     "fast-xml-parser": "^5.10.1",
     "lucide-react": "^1.25.0",
     "next": "16.3.0-preview.8",
+    "node-html-markdown": "^2.0.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "shadcn": "^4.14.0",
