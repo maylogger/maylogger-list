@@ -11,6 +11,14 @@ export type FeedMetrics = {
 /** 貼文型態（目前僅 X 來源會帶） */
 export type FeedPostKind = "original" | "retweet" | "quote" | "reply";
 
+/** 附圖／影音（目前僅 X 來源會帶） */
+export type FeedMedia = {
+  url: string;
+  type: string;
+  previewUrl?: string;
+  alt?: string;
+};
+
 export type FeedItem = {
   title: string;
   link: string;
@@ -23,6 +31,7 @@ export type FeedItem = {
   metrics?: FeedMetrics;
   /** original / retweet / quote / reply */
   kind?: FeedPostKind;
+  media?: FeedMedia[];
 };
 
 function escapeXml(value: string) {
@@ -32,6 +41,19 @@ function escapeXml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+/** CDATA 內容不可出現字面 `]]>` */
+function toCdata(value: string) {
+  return value.replaceAll("]]>", "]]]]><![CDATA[>");
 }
 
 /** 機器可解析的 metrics 鍵值字串（likes=1 replies=2 …） */
@@ -67,6 +89,25 @@ function toRfc822(value: string) {
   return new Date(value).toUTCString();
 }
 
+/** 純文字 description → RSS 可顯示換行／圖片的 HTML */
+export function descriptionToRssHtml(item: FeedItem): string {
+  const body = escapeHtml(item.description).replaceAll("\n", "<br>\n");
+  const mediaHtml = (item.media ?? [])
+    .map((media) => {
+      const alt = escapeHtml(media.alt ?? media.type);
+      const src = escapeHtml(media.url);
+      if (media.type === "photo" || media.type === "animated_gif") {
+        return `<p><img src="${src}" alt="${alt}" /></p>`;
+      }
+      // 影片等：給預覽圖＋可點連結
+      const preview = media.previewUrl ? escapeHtml(media.previewUrl) : src;
+      return `<p><a href="${src}"><img src="${preview}" alt="${alt}" /></a></p>`;
+    })
+    .join("\n");
+
+  return mediaHtml ? `${body}\n${mediaHtml}` : body;
+}
+
 export function buildRssFeed(options: {
   title: string;
   description: string;
@@ -97,12 +138,14 @@ export function buildRssFeed(options: {
           ? `\n      <author>${escapeXml(item.author)}</author>`
           : "";
 
+      const html = descriptionToRssHtml(item);
+
       return `    <item>
       <title>${escapeXml(item.title)}</title>
       <link>${escapeXml(item.link)}</link>
       <guid isPermaLink="true">${escapeXml(item.guid)}</guid>
       <pubDate>${toRfc822(item.pubDate)}</pubDate>${author}${category}${kindCategory}${metricsCategory}
-      <description>${escapeXml(item.description)}</description>
+      <description><![CDATA[${toCdata(html)}]]></description>
     </item>`;
     })
     .join("\n");

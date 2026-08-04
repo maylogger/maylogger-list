@@ -2,6 +2,7 @@ import {
   formatKindLine,
   formatMetricsLine,
   type FeedItem,
+  type FeedMedia,
   type FeedMetrics,
   type FeedPostKind,
 } from "@/lib/rss";
@@ -30,6 +31,31 @@ export type XReferencedTweet = {
   id: string;
 };
 
+type XUrlEntity = {
+  start: number;
+  end: number;
+  url: string;
+  expanded_url?: string;
+  display_url?: string;
+  media_key?: string;
+};
+
+type XEntities = {
+  urls?: XUrlEntity[];
+};
+
+type XAttachments = {
+  media_keys?: string[];
+};
+
+export type XMedia = {
+  media_key: string;
+  type: string;
+  url?: string;
+  preview_image_url?: string;
+  alt_text?: string;
+};
+
 export type XTweet = {
   id: string;
   text: string;
@@ -38,6 +64,9 @@ export type XTweet = {
   author?: XUser;
   public_metrics?: XPublicMetrics;
   referenced_tweets?: XReferencedTweet[];
+  entities?: XEntities;
+  attachments?: XAttachments;
+  media?: XMedia[];
   /** 被引用／轉發的原文（來自 expansions） */
   referenced?: XTweet;
 };
@@ -49,6 +78,8 @@ type XTweetPayload = {
   author_id: string;
   public_metrics?: XPublicMetrics;
   referenced_tweets?: XReferencedTweet[];
+  entities?: XEntities;
+  attachments?: XAttachments;
 };
 
 function tweetUrl(tweet: XTweet) {
@@ -58,7 +89,7 @@ function tweetUrl(tweet: XTweet) {
 
 function tweetTitle(tweet: XTweet) {
   const author = tweet.author ? `${tweet.author.name} (@${tweet.author.username})` : "X";
-  const preview = tweet.text.replaceAll(/\s+/g, " ").trim();
+  const preview = displayTweetText(tweet).replaceAll(/\s+/g, " ").trim();
   const short = preview.length > 80 ? `${preview.slice(0, 77).trimEnd()}…` : preview;
   const kind = getPostKind(tweet);
   const prefix = kind === "retweet" ? "[RT] " : kind === "quote" ? "[QT] " : "";
@@ -103,12 +134,64 @@ function resolveMetrics(tweet: XTweet): FeedMetrics | undefined {
   return source != null ? toFeedMetrics(source) : undefined;
 }
 
+/** RT 取原文媒體；其餘取本則 */
+function resolveMedia(tweet: XTweet): XMedia[] {
+  const kind = getPostKind(tweet);
+  if (kind === "retweet" && tweet.referenced != null) {
+    return tweet.referenced.media ?? [];
+  }
+  return tweet.media ?? [];
+}
+
+function toFeedMedia(media: XMedia[]): FeedMedia[] {
+  return media
+    .map((item) => {
+      const url = item.url ?? item.preview_image_url;
+      if (!url) return null;
+      const feedMedia: FeedMedia = {
+        url,
+        type: item.type,
+      };
+      if (item.preview_image_url && item.preview_image_url !== url) {
+        feedMedia.previewUrl = item.preview_image_url;
+      }
+      if (item.alt_text) feedMedia.alt = item.alt_text;
+      return feedMedia;
+    })
+    .filter((item): item is FeedMedia => item != null);
+}
+
+/**
+ * 展開一般連結、移除結尾的媒體 t.co（改由 media 欄位提供實際網址）。
+ * 由後往前替換，避免 offset 錯位。
+ */
+export function displayTweetText(tweet: Pick<XTweet, "text" | "entities">): string {
+  const urls = (tweet.entities?.urls ?? []).toSorted((a, b) => b.start - a.start);
+  let text = tweet.text;
+
+  for (const entity of urls) {
+    const before = text.slice(0, entity.start);
+    const after = text.slice(entity.end);
+
+    if (entity.media_key) {
+      // 媒體短連結通常掛在文末，去掉即可
+      text = `${before.trimEnd()}${after}`;
+      continue;
+    }
+
+    const replacement = entity.expanded_url ?? entity.url;
+    text = `${before}${replacement}${after}`;
+  }
+
+  return text.replaceAll(/[ \t]+\n/g, "\n").trimEnd();
+}
+
 function tweetDescription(tweet: XTweet, kind: FeedPostKind, metrics?: FeedMetrics): string {
   const lines = [formatKindLine(kind)];
   if (metrics != null) {
     lines.push(formatMetricsLine(metrics));
   }
-  return `${lines.join("\n")}\n\n${tweet.text}`;
+  return `${lines.join("\n")}\n\n${displayTweetText(tweet)}`;
 }
 
 /** 把 X 貼文轉成中立 FeedItem */
@@ -118,8 +201,9 @@ export function tweetsToFeedItems(tweets: XTweet[]): FeedItem[] {
     const author = tweet.author ? `${tweet.author.name} (@${tweet.author.username})` : "X";
     const kind = getPostKind(tweet);
     const metrics = resolveMetrics(tweet);
+    const media = toFeedMedia(resolveMedia(tweet));
 
-    return {
+    const item: FeedItem = {
       title: tweetTitle(tweet),
       link: url,
       guid: url,
@@ -130,6 +214,8 @@ export function tweetsToFeedItems(tweets: XTweet[]): FeedItem[] {
       metrics,
       kind,
     };
+    if (media.length > 0) item.media = media;
+    return item;
   });
 }
 
@@ -138,6 +224,7 @@ type XListTweetsResponse = {
   includes?: {
     users?: XUser[];
     tweets?: XTweetPayload[];
+    media?: XMedia[];
   };
   meta?: {
     result_count?: number;
@@ -204,10 +291,16 @@ function pickPrimaryReference(refs: XReferencedTweet[] | undefined): XReferenced
   );
 }
 
+function attachMedia(payload: XTweetPayload, mediaByKey: Map<string, XMedia>): XMedia[] {
+  const keys = payload.attachments?.media_keys ?? [];
+  return keys.map((key) => mediaByKey.get(key)).filter((item): item is XMedia => item != null);
+}
+
 function hydrateTweet(
   payload: XTweetPayload,
   users: Map<string, XUser>,
   referencedTweets: Map<string, XTweetPayload>,
+  mediaByKey: Map<string, XMedia>,
 ): XTweet {
   const primaryRef = pickPrimaryReference(payload.referenced_tweets);
   const referencedPayload = primaryRef != null ? referencedTweets.get(primaryRef.id) : undefined;
@@ -220,6 +313,9 @@ function hydrateTweet(
     author: users.get(payload.author_id),
     public_metrics: payload.public_metrics,
     referenced_tweets: payload.referenced_tweets,
+    entities: payload.entities,
+    attachments: payload.attachments,
+    media: attachMedia(payload, mediaByKey),
     referenced:
       referencedPayload != null
         ? {
@@ -230,6 +326,9 @@ function hydrateTweet(
             author: users.get(referencedPayload.author_id),
             public_metrics: referencedPayload.public_metrics,
             referenced_tweets: referencedPayload.referenced_tweets,
+            entities: referencedPayload.entities,
+            attachments: referencedPayload.attachments,
+            media: attachMedia(referencedPayload, mediaByKey),
           }
         : undefined,
   };
@@ -239,15 +338,18 @@ function hydrateTweet(
 export async function getListTweets(listId = X_LIST_ID, maxResults = 50): Promise<XTweet[]> {
   const params = new URLSearchParams({
     max_results: String(Math.min(Math.max(maxResults, 1), 100)),
-    "tweet.fields": "created_at,author_id,public_metrics,referenced_tweets",
-    expansions: "author_id,referenced_tweets.id,referenced_tweets.author_id",
+    "tweet.fields": "created_at,author_id,public_metrics,referenced_tweets,attachments,entities",
+    // referenced 貼文的 media_keys 也會進 includes.media（搭配 attachments.media_keys）
+    expansions: "author_id,referenced_tweets.id,referenced_tweets.author_id,attachments.media_keys",
     "user.fields": "name,username",
+    "media.fields": "url,preview_image_url,type,alt_text,width,height",
   });
 
   const data = await xFetch<XListTweetsResponse>(`/lists/${listId}/tweets?${params}`);
 
   const users = new Map((data.includes?.users ?? []).map((u) => [u.id, u]));
   const referencedTweets = new Map((data.includes?.tweets ?? []).map((t) => [t.id, t]));
+  const mediaByKey = new Map((data.includes?.media ?? []).map((m) => [m.media_key, m]));
 
-  return (data.data ?? []).map((tweet) => hydrateTweet(tweet, users, referencedTweets));
+  return (data.data ?? []).map((tweet) => hydrateTweet(tweet, users, referencedTweets, mediaByKey));
 }
