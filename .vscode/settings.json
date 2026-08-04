@@ -3,6 +3,8 @@
   "oxc.enable.oxfmt": true,
   "oxc.enable.oxlint": true,
   "oxc.fmt.configPath": ".oxfmtrc.json",
+  "oxc.path.oxlint": "node_modules/oxlint/bin/oxlint",
+  "oxc.path.oxfmt": "node_modules/oxfmt/bin/oxfmt",
   "editor.defaultFormatter": "oxc.oxc-vscode",
   "editor.formatOnSave": true,
   "editor.formatOnSaveMode": "file",
