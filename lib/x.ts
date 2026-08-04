@@ -162,6 +162,31 @@ function toFeedMedia(media: XMedia[]): FeedMedia[] {
 }
 
 /**
+ * X API v2 的 entity start/end 是 Unicode code point 索引，
+ * 不是 JS string 的 UTF-16 code unit；對 supplementary 字元（數學字母、emoji）
+ * 必須用 code point 陣列切片，否則會切到 surrogate 中間出現 �。
+ */
+function replaceByCodePoints(
+  text: string,
+  start: number,
+  end: number,
+  replacement: string,
+  trimTrailingSpaceBefore = false,
+): string {
+  const chars = [...text];
+  if (start < 0 || end > chars.length || start > end) return text;
+
+  let from = start;
+  if (trimTrailingSpaceBefore) {
+    while (from > 0 && /\s/u.test(chars[from - 1]!)) {
+      from -= 1;
+    }
+  }
+
+  return [...chars.slice(0, from), ...replacement, ...chars.slice(end)].join("");
+}
+
+/**
  * 展開一般連結、移除結尾的媒體 t.co（改由 media 欄位提供實際網址）。
  * 由後往前替換，避免 offset 錯位。
  */
@@ -170,17 +195,14 @@ export function displayTweetText(tweet: Pick<XTweet, "text" | "entities">): stri
   let text = tweet.text;
 
   for (const entity of urls) {
-    const before = text.slice(0, entity.start);
-    const after = text.slice(entity.end);
-
     if (entity.media_key) {
       // 媒體短連結通常掛在文末，去掉即可
-      text = `${before.trimEnd()}${after}`;
+      text = replaceByCodePoints(text, entity.start, entity.end, "", true);
       continue;
     }
 
     const replacement = entity.expanded_url ?? entity.url;
-    text = `${before}${replacement}${after}`;
+    text = replaceByCodePoints(text, entity.start, entity.end, replacement);
   }
 
   return text.replaceAll(/[ \t]+\n/g, "\n").trimEnd();
