@@ -143,7 +143,6 @@ export function buildRssFeed(options: {
       return `    <item>
       <title>${escapeXml(item.title)}</title>
       <link>${escapeXml(item.link)}</link>
-      <guid isPermaLink="true">${escapeXml(item.guid)}</guid>
       <pubDate>${toRfc822(item.pubDate)}</pubDate>${author}${category}${kindCategory}${metricsCategory}
       <description><![CDATA[${toCdata(html)}]]></description>
     </item>`;

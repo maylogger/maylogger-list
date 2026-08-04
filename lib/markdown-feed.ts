@@ -52,13 +52,12 @@ function mediaToMarkdown(media: FeedMedia[]): string {
       const preview = item.previewUrl ?? item.url;
       return `[![${alt}](${preview})](${item.url})`;
     })
-    .join("\n\n");
+    .join("\n");
 }
 
 function formatItem(item: FeedItem): string {
   const meta: string[] = [
     `- link: ${item.link}`,
-    `- guid: ${item.guid}`,
     `- pubDate: ${new Date(item.pubDate).toISOString()}`,
   ];
 
@@ -66,11 +65,6 @@ function formatItem(item: FeedItem): string {
   if (item.category) meta.push(`- category: ${item.category}`);
   if (item.kind) meta.push(`- kind: ${item.kind}`);
   if (item.metrics) meta.push(`- metrics: ${formatMetricsFields(item.metrics)}`);
-  if (item.media?.length) {
-    for (const media of item.media) {
-      meta.push(`- media(${media.type}): ${media.url}`);
-    }
-  }
 
   const body = descriptionToMarkdown(item.description);
   const mediaBlock = item.media?.length ? mediaToMarkdown(item.media) : "";
@@ -85,20 +79,13 @@ function formatItem(item: FeedItem): string {
 }
 
 /** 把 FeedItem 轉成給人／agent 閱讀的 Markdown feed */
-export function buildMarkdownFeed(options: {
-  title: string;
-  description: string;
-  feedUrl: string;
-  items: FeedItem[];
-}) {
-  const { title, description, feedUrl, items } = options;
+export function buildMarkdownFeed(options: { title: string; feedUrl: string; items: FeedItem[] }) {
+  const { title, feedUrl, items } = options;
   const lastBuildDate =
     items[0]?.pubDate != null ? new Date(items[0].pubDate).toISOString() : new Date().toISOString();
 
   const header = [
     `# ${title}`,
-    "",
-    description,
     "",
     `- feed: ${feedUrl}`,
     `- lastBuildDate: ${lastBuildDate}`,

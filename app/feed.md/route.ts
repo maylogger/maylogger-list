@@ -31,7 +31,6 @@ export async function GET(request: Request) {
 
   const markdown = buildMarkdownFeed({
     title: "maylogger-list",
-    description: "混合 X List 與 Sidebar 的對等 Markdown feed",
     feedUrl: url.toString(),
     items: result.items,
   });
