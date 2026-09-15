@@ -78,18 +78,28 @@ function formatItem(item: FeedItem): string {
   return parts.join("\n");
 }
 
-/** 把 FeedItem 轉成給人／agent 閱讀的 Markdown feed */
-export function buildMarkdownFeed(options: { title: string; feedUrl: string; items: FeedItem[] }) {
-  const { title, feedUrl, items } = options;
-  const lastBuildDate =
-    items[0]?.pubDate != null ? new Date(items[0].pubDate).toISOString() : new Date().toISOString();
+interface MarkdownFeedOptions {
+  title: string;
+  listId?: string;
+  userId?: string;
+  feedUrl?: string;
+  rangeHours: number | null;
+  items: FeedItem[];
+}
+
+/** 把 FeedItem 與實際查詢條件轉成給人／agent 閱讀的 Markdown feed */
+export function buildMarkdownFeed(options: MarkdownFeedOptions) {
+  const { title, listId, userId, feedUrl, rangeHours, items } = options;
+  const sourceLines: string[] = [];
+  if (userId) sourceLines.push(`- userId=${userId}`);
+  if (listId) sourceLines.push(`- listId=${listId}`);
+  if (feedUrl) sourceLines.push(`- feed=${feedUrl}`);
 
   const header = [
     `# ${title}`,
     "",
-    `- feed: ${feedUrl}`,
-    `- lastBuildDate: ${lastBuildDate}`,
-    `- itemCount: ${items.length}`,
+    ...sourceLines,
+    `- range ${rangeHours == null ? "不限時間" : `${rangeHours} 小時內`}`,
     "",
     "---",
   ];

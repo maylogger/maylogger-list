@@ -1,8 +1,14 @@
 import type { FeedItem } from "@/lib/rss";
-import { getSidebarItems } from "@/lib/sidebar";
-import { getListTweets, tweetsToFeedItems, X_LIST_ID } from "@/lib/x";
+import { getRssFeedItems } from "@/lib/sidebar";
+import { getListTweets, getUserTweets, tweetsToFeedItems } from "@/lib/x";
 
 const MAX_RANGE_HOURS = 168;
+
+export interface FeedSources {
+  listId?: string;
+  userId?: string;
+  feedUrl?: string;
+}
 
 export function unauthorized() {
   return new Response("Unauthorized", { status: 401 });
@@ -15,6 +21,45 @@ export function isAuthorized(request: Request) {
 
   const token = new URL(request.url).searchParams.get("token");
   return token === secret;
+}
+
+/** 解析動態來源；至少需要一個來源，且外部 RSS 僅允許 HTTPS */
+export function parseFeedSources(searchParams: URLSearchParams): FeedSources {
+  const listId = searchParams.get("listId")?.trim() ?? "";
+  const userId = searchParams.get("userId")?.trim() ?? "";
+  const rawFeedUrl = searchParams.get("feedUrl")?.trim() ?? "";
+
+  if (listId && !/^\d+$/.test(listId)) {
+    throw new Error("listId 必須是純數字的 X List ID");
+  }
+  if (userId && !/^\d+$/.test(userId)) {
+    throw new Error("userId 必須是純數字的 X User ID");
+  }
+
+  let feedUrl = "";
+  if (rawFeedUrl) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(rawFeedUrl);
+    } catch {
+      throw new Error("feedUrl 必須是有效的 HTTPS URL");
+    }
+
+    if (parsedUrl.protocol !== "https:") {
+      throw new Error("feedUrl 僅支援 HTTPS URL");
+    }
+    feedUrl = parsedUrl.toString();
+  }
+
+  if (!listId && !userId && !feedUrl) {
+    throw new Error("至少需要提供 listId、userId 或 feedUrl");
+  }
+
+  return {
+    ...(listId ? { listId } : {}),
+    ...(userId ? { userId } : {}),
+    ...(feedUrl ? { feedUrl } : {}),
+  };
 }
 
 /** 解析 ?range=N（過去 N 小時）。null = 不篩選；非法則丟錯 */
@@ -52,19 +97,40 @@ function settleErrorMessage(result: PromiseSettledResult<unknown>, label: string
 
 export type FeedGatherResult = { ok: true; items: FeedItem[] } | { ok: false; error: string };
 
-/** 並行抓取雙源、合併、排序、依 range 篩選 */
-export async function gatherFeedItems(rangeHours: number | null): Promise<FeedGatherResult> {
-  const [xResult, sidebarResult] = await Promise.allSettled([
-    getListTweets(X_LIST_ID).then(tweetsToFeedItems),
-    getSidebarItems(),
-  ]);
+/** 抓取指定來源、合併、排序、依 range 篩選 */
+export async function gatherFeedItems(
+  sources: FeedSources,
+  rangeHours: number | null,
+): Promise<FeedGatherResult> {
+  const requests: Array<{ label: string; promise: Promise<FeedItem[]> }> = [];
+  if (sources.listId) {
+    requests.push({
+      label: "X List",
+      promise: getListTweets(sources.listId).then(tweetsToFeedItems),
+    });
+  }
+  if (sources.userId) {
+    requests.push({
+      label: "X User",
+      promise: getUserTweets(sources.userId).then(tweetsToFeedItems),
+    });
+  }
+  if (sources.feedUrl) {
+    requests.push({
+      label: "RSS",
+      promise: getRssFeedItems(sources.feedUrl),
+    });
+  }
 
+  const results = await Promise.allSettled(requests.map(({ promise }) => promise));
   const items: FeedItem[] = [];
-  if (xResult.status === "fulfilled") items.push(...xResult.value);
-  if (sidebarResult.status === "fulfilled") items.push(...sidebarResult.value);
+  for (const result of results) {
+    if (result.status === "fulfilled") items.push(...result.value);
+  }
 
-  if (items.length === 0 && xResult.status === "rejected" && sidebarResult.status === "rejected") {
-    const details = [settleErrorMessage(xResult, "X"), settleErrorMessage(sidebarResult, "Sidebar")]
+  if (results.every((result) => result.status === "rejected")) {
+    const details = results
+      .map((result, index) => settleErrorMessage(result, requests[index]!.label))
       .filter(Boolean)
       .join("；");
     return { ok: false, error: details };

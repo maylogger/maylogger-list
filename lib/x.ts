@@ -7,14 +7,21 @@ import {
   type FeedPostKind,
 } from "@/lib/rss";
 
-/** 寫死要訂閱的 X List ID */
-export const X_LIST_ID = "1687536262859849728";
-
 export type XUser = {
   id: string;
   name: string;
   username: string;
 };
+
+export interface XUserProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  description: string;
+  link: string;
+  profilePictureUrl?: string;
+  coverImageUrl?: string;
+}
 
 /** X API public_metrics */
 export type XPublicMetrics = {
@@ -241,7 +248,7 @@ export function tweetsToFeedItems(tweets: XTweet[]): FeedItem[] {
   });
 }
 
-type XListTweetsResponse = {
+type XTimelineResponse = {
   data?: XTweetPayload[];
   includes?: {
     users?: XUser[];
@@ -260,6 +267,27 @@ type XListResponse = {
     id: string;
     name: string;
     description?: string;
+  };
+  errors?: Array<{ detail?: string; title?: string }>;
+};
+
+type XUserProfileResponse = {
+  data?: {
+    id: string;
+    name: string;
+    username: string;
+    description?: string;
+    url?: string;
+    profile_image_url?: string;
+    profile_banner_url?: string;
+    entities?: {
+      url?: {
+        urls?: Array<{
+          url: string;
+          expanded_url?: string;
+        }>;
+      };
+    };
   };
   errors?: Array<{ detail?: string; title?: string }>;
 };
@@ -298,9 +326,38 @@ async function xFetch<T>(path: string): Promise<T> {
 }
 
 /** 取得 List 基本資訊（標題用） */
-export async function getListInfo(listId = X_LIST_ID) {
+export async function getListInfo(listId: string) {
   const data = await xFetch<XListResponse>(`/lists/${listId}?list.fields=description,name`);
   return data.data ?? { id: listId, name: `X List ${listId}` };
+}
+
+/** 以 X User ID 取得公開 profile 資訊 */
+export async function getXUserProfile(userId: string): Promise<XUserProfile> {
+  const params = new URLSearchParams({
+    "user.fields": "description,entities,name,profile_banner_url,profile_image_url,url,username",
+  });
+  const response = await xFetch<XUserProfileResponse>(`/users/${userId}?${params}`);
+  const user = response.data;
+
+  if (!user) {
+    throw new Error(`找不到 X User ID ${userId}`);
+  }
+
+  const expandedLink = user.entities?.url?.urls?.[0]?.expanded_url;
+  const profilePictureUrl = user.profile_image_url?.replace(
+    /_normal(?=\.[a-z0-9]+(?:\?|$))/i,
+    "_400x400",
+  );
+
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.name,
+    description: user.description ?? "",
+    link: expandedLink ?? user.url ?? `https://x.com/${user.username}`,
+    ...(profilePictureUrl ? { profilePictureUrl } : {}),
+    ...(user.profile_banner_url ? { coverImageUrl: user.profile_banner_url } : {}),
+  };
 }
 
 function pickPrimaryReference(refs: XReferencedTweet[] | undefined): XReferencedTweet | undefined {
@@ -357,9 +414,22 @@ function hydrateTweet(
 }
 
 /** 取得 List 最近貼文 */
-export async function getListTweets(listId = X_LIST_ID, maxResults = 50): Promise<XTweet[]> {
+export async function getListTweets(listId: string, maxResults = 50): Promise<XTweet[]> {
+  return getTimelineTweets(`/lists/${listId}/tweets`, maxResults, 1);
+}
+
+/** 取得指定使用者最近貼文 */
+export async function getUserTweets(userId: string, maxResults = 50): Promise<XTweet[]> {
+  return getTimelineTweets(`/users/${userId}/tweets`, maxResults, 5);
+}
+
+async function getTimelineTweets(
+  path: string,
+  maxResults: number,
+  minimumResults: number,
+): Promise<XTweet[]> {
   const params = new URLSearchParams({
-    max_results: String(Math.min(Math.max(maxResults, 1), 100)),
+    max_results: String(Math.min(Math.max(maxResults, minimumResults), 100)),
     "tweet.fields": "created_at,author_id,public_metrics,referenced_tweets,attachments,entities",
     // referenced 貼文的 media_keys 也會進 includes.media（搭配 attachments.media_keys）
     expansions: "author_id,referenced_tweets.id,referenced_tweets.author_id,attachments.media_keys",
@@ -367,7 +437,7 @@ export async function getListTweets(listId = X_LIST_ID, maxResults = 50): Promis
     "media.fields": "url,preview_image_url,type,alt_text,width,height",
   });
 
-  const data = await xFetch<XListTweetsResponse>(`/lists/${listId}/tweets?${params}`);
+  const data = await xFetch<XTimelineResponse>(`${path}?${params}`);
 
   const users = new Map((data.includes?.users ?? []).map((u) => [u.id, u]));
   const referencedTweets = new Map((data.includes?.tweets ?? []).map((t) => [t.id, t]));

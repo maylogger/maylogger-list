@@ -34,28 +34,6 @@ export type FeedItem = {
   media?: FeedMedia[];
 };
 
-function escapeXml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-/** CDATA 內容不可出現字面 `]]>` */
-function toCdata(value: string) {
-  return value.replaceAll("]]>", "]]]]><![CDATA[>");
-}
-
 /** 機器可解析的 metrics 鍵值字串（likes=1 replies=2 …） */
 export function formatMetricsFields(metrics: FeedMetrics): string {
   const parts = [
@@ -83,83 +61,4 @@ export function formatMetricsLine(metrics: FeedMetrics): string {
 /** description 開頭用的 kind 行 */
 export function formatKindLine(kind: FeedPostKind): string {
   return `kind=${kind}`;
-}
-
-function toRfc822(value: string) {
-  return new Date(value).toUTCString();
-}
-
-/** 純文字 description → RSS 可顯示換行／圖片的 HTML */
-export function descriptionToRssHtml(item: FeedItem): string {
-  const body = escapeHtml(item.description).replaceAll("\n", "<br>\n");
-  const mediaHtml = (item.media ?? [])
-    .map((media) => {
-      const alt = escapeHtml(media.alt ?? media.type);
-      const src = escapeHtml(media.url);
-      if (media.type === "photo" || media.type === "animated_gif") {
-        return `<p><img src="${src}" alt="${alt}" /></p>`;
-      }
-      // 影片等：給預覽圖＋可點連結
-      const preview = media.previewUrl ? escapeHtml(media.previewUrl) : src;
-      return `<p><a href="${src}"><img src="${preview}" alt="${alt}" /></a></p>`;
-    })
-    .join("\n");
-
-  return mediaHtml ? `${body}\n${mediaHtml}` : body;
-}
-
-export function buildRssFeed(options: {
-  title: string;
-  description: string;
-  link: string;
-  feedUrl: string;
-  items: FeedItem[];
-}) {
-  const { title, description, link, feedUrl, items } = options;
-  const lastBuildDate =
-    items[0]?.pubDate != null ? toRfc822(items[0].pubDate) : new Date().toUTCString();
-
-  const itemXml = items
-    .map((item) => {
-      const category =
-        item.category != null && item.category !== ""
-          ? `\n      <category>${escapeXml(item.category)}</category>`
-          : "";
-      const metricsCategory =
-        item.metrics != null
-          ? `\n      <category domain="metrics">${escapeXml(formatMetricsFields(item.metrics))}</category>`
-          : "";
-      const kindCategory =
-        item.kind != null
-          ? `\n      <category domain="kind">${escapeXml(item.kind)}</category>`
-          : "";
-      const author =
-        item.author != null && item.author !== ""
-          ? `\n      <author>${escapeXml(item.author)}</author>`
-          : "";
-
-      const html = descriptionToRssHtml(item);
-
-      return `    <item>
-      <title>${escapeXml(item.title)}</title>
-      <link>${escapeXml(item.link)}</link>
-      <pubDate>${toRfc822(item.pubDate)}</pubDate>${author}${category}${kindCategory}${metricsCategory}
-      <description><![CDATA[${toCdata(html)}]]></description>
-    </item>`;
-    })
-    .join("\n");
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
-  <channel>
-    <title>${escapeXml(title)}</title>
-    <link>${escapeXml(link)}</link>
-    <description>${escapeXml(description)}</description>
-    <language>zh-Hant</language>
-    <lastBuildDate>${lastBuildDate}</lastBuildDate>
-    <atom:link href="${escapeXml(feedUrl)}" rel="self" type="application/rss+xml" />
-${itemXml}
-  </channel>
-</rss>
-`;
 }

@@ -1,6 +1,6 @@
 # maylogger-list
 
-把 [X List](https://x.com/i/lists/1687536262859849728) 與 [Sidebar](https://sidebar.io/feed.xml) 混合成可訂閱的 RSS feed。兩邊對等，依時間排序；來源標在 `<category>`（`X` / `Sidebar`）。
+把網址指定的 X List、X User 與 RSS 2.0 feed 混合成 Markdown feed。各來源對等，依時間排序，來源會標在每筆項目的 `category`。
 
 以 [sota.design.2027](https://github.com/maylogger/sota.design.2027) Next.js template 為底。
 
@@ -8,25 +8,31 @@
 
 ```bash
 pnpm install
-# 編輯 .env.local，填入 X_BEARER_TOKEN
+# 若使用 X List 或 X User，編輯 .env.local 並填入 X_BEARER_TOKEN
 pnpm dev
 ```
 
-- RSS：http://localhost:3000/feed.xml
-- Markdown：http://localhost:3000/feed.md
+- Markdown：http://localhost:3000/feed.md（需帶 `listId`、`userId` 或 `feedUrl`）
 
 ## 查詢參數
 
-| 參數    | 說明                                                                              |
-| ------- | --------------------------------------------------------------------------------- |
-| `token` | 若有設定 `FEED_SECRET`，需帶上密鑰                                                |
-| `range` | 過去 N 小時（正整數 `1`–`168`）。例如 `?range=3`、`?range=12`。未帶則不依時間篩選 |
+| 參數      | 說明                                                |
+| --------- | --------------------------------------------------- |
+| `listId`  | X List ID（純數字）                                 |
+| `userId`  | X User ID（純數字）                                 |
+| `feedUrl` | RSS 2.0 feed 的 HTTPS URL（需進行 URL 編碼）        |
+| `token`   | 若有設定 `FEED_SECRET`，需帶上密鑰                  |
+| `range`   | 過去 N 小時（正整數 `1`–`168`）。未帶則不依時間篩選 |
+
+`listId`、`userId` 與 `feedUrl` 至少要提供一個，也可以同時提供。
 
 範例：
 
-- `/feed.xml?range=3` — 過去 3 小時
-- `/feed.md?range=3` — 同上，Markdown 輸出
-- `/feed.xml?token=你的密鑰&range=12` — 需密鑰時併用
+- `/feed.md?listId=1687536262859849728` — 僅抓取 X List
+- `/feed.md?userId=44196397` — 僅抓取指定 X User
+- `/feed.md?feedUrl=https%3A%2F%2Fsidebar.io%2Ffeed.xml` — 僅抓取 RSS
+- `/feed.md?listId=1687536262859849728&feedUrl=https%3A%2F%2Fsidebar.io%2Ffeed.xml` — 合併兩個來源
+- `/feed.md?token=你的密鑰&listId=1687536262859849728&range=12` — 需密鑰並限制過去 12 小時
 
 ## X Developer Console
 
@@ -42,20 +48,22 @@ FEED_SECRET=可選的隨機密鑰
 
 ## 環境變數
 
-| 變數             | 必填 | 說明                                                          |
-| ---------------- | ---- | ------------------------------------------------------------- |
-| `X_BEARER_TOKEN` | 是   | X API Bearer Token                                            |
-| `FEED_SECRET`    | 否   | 設定後需以 `/feed.xml?token=...` 或 `/feed.md?token=...` 存取 |
+| 變數             | 必填                     | 說明                                 |
+| ---------------- | ------------------------ | ------------------------------------ |
+| `X_BEARER_TOKEN` | 使用 X List 或 X User 時 | X API Bearer Token                   |
+| `FEED_SECRET`    | 否                       | 設定後需以 `/feed.md?token=...` 存取 |
 
 ## 來源
 
-- X List ID（寫死）：`lib/x.ts` 內 `X_LIST_ID = "1687536262859849728"`
-- Sidebar：`https://sidebar.io/feed.xml`
+- X List：以 `listId` 查詢參數指定。
+- X User：以 `userId` 查詢參數指定。
+- RSS 2.0：以 URL 編碼後的 `feedUrl` 查詢參數指定；僅接受 HTTPS。
+- 未提供任何來源或參數格式錯誤時回傳 `400`。
 
 ## 技術備註
 
-- Route：`app/feed.xml/route.ts`、`app/feed.md/route.ts`
-- 共用抓取／篩選：`lib/feed-route.ts`；Markdown 組裝：`lib/markdown-feed.ts`（Sidebar HTML description 以 `node-html-markdown` 轉換）
-- X 來源會展開 `attachments.media_keys`，把圖片／影片預覽寫進 feed；RSS description 用 HTML `<br>`／`<img>`（CDATA），Markdown 用硬換行與 `![]()`
-- 雙源以 `Promise.allSettled` 並行抓取；單一來源失敗會降級，兩源都失敗才 502
+- Route：`app/feed.md/route.ts`
+- 共用抓取／篩選：`lib/feed-route.ts`；RSS 2.0 解析：`lib/sidebar.ts`；Markdown 組裝：`lib/markdown-feed.ts`（RSS HTML description 以 `node-html-markdown` 轉換）
+- X 來源會展開 `attachments.media_keys`，把圖片／影片預覽寫進 feed；Markdown 用硬換行與 `![]()`
+- 多來源以 `Promise.allSettled` 並行抓取；其中一個來源失敗時降級，所有指定來源都失敗才回傳 `502`
 - 預設快取 5 分鐘（`revalidate = 300`），降低 RSS 客戶端重複請求造成的 API 費用
