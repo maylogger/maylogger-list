@@ -20,7 +20,6 @@ coverage/
 
 # production
 /build
-ladle-build/
 
 # misc
 .DS_Store

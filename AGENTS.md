@@ -23,6 +23,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Use Oxlint for linting.
 - Use Oxfmt for formatting, import sorting, and Tailwind class sorting.
 - Do not add ESLint, Prettier, Biome, Babel, or custom Webpack configuration.
-- Use Ladle for isolated React component development.
-- Keep Ladle stories next to their components using `*.stories.tsx`.
 - Run `pnpm check` and `pnpm build` before completing code changes.
