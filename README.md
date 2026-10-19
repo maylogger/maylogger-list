@@ -10,8 +10,6 @@ pnpm install
 pnpm dev
 ```
 
-- Markdown：http://localhost:3000/feed.md（需帶 `listId`、`userId` 或 `feedUrl`）
-
 ## 查詢參數
 
 | 參數      | 說明                                                |
