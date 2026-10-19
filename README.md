@@ -2,8 +2,6 @@
 
 把網址指定的 X List、X User 與 RSS 2.0 feed 混合成 Markdown feed。各來源對等，依時間排序，來源會標在每筆項目的 `category`。
 
-以 [sota.design.2027](https://github.com/maylogger/sota.design.2027) Next.js template 為底。
-
 ## 快速開始
 
 ```bash
